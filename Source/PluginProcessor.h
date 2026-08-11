@@ -38,9 +38,11 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    void updateFilterCoefficients(float bandwidth);
 
     // MP3風の劣化エフェクト用
     double currentSampleRate = 44100.0;
+    float currentBandwidth = -1.0f;
     float downsamplePhase = 0.0f;
     float lastSampleL = 0.0f;
     float lastSampleR = 0.0f;

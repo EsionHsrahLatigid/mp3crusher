@@ -3,6 +3,8 @@
 #include <juce_events/juce_events.h>
 #include <cmath>
 #include <iostream>
+#include <iterator>
+#include <limits>
 
 namespace
 {
@@ -11,6 +13,12 @@ bool check(bool condition, const char* message)
     if (!condition)
         std::cerr << "[FAIL] " << message << '\n';
     return condition;
+}
+
+void setParameter(juce::AudioProcessorValueTreeState& apvts, const char* id, float plainValue)
+{
+    if (auto* parameter = apvts.getParameter(id))
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
 }
 } // namespace
 
@@ -44,12 +52,19 @@ int main()
     }
 
     constexpr double sampleRate = 44100.0;
-    processor.prepareToPlay(sampleRate, 1024);
+    processor.prepareToPlay(sampleRate, 2048);
     int generatedSamples = 0;
-    const int blockSizes[] { 32, 64, 128, 256, 512, 1024 };
+    const int blockSizes[] { 1, 17, 32, 64, 127, 256, 513, 1024, 2048 };
 
-    for (const auto blockSize : blockSizes)
+    for (int blockIndex = 0; blockIndex < static_cast<int>(std::size(blockSizes)); ++blockIndex)
     {
+        const auto blockSize = blockSizes[blockIndex];
+        setParameter(processor.apvts, "bandwidth", blockIndex % 2 == 0 ? 1000.0f : 20000.0f);
+        setParameter(processor.apvts, "bitcrush", blockIndex % 3 == 0 ? 1.0f : 16.0f);
+        setParameter(processor.apvts, "downsample", blockIndex % 2 == 0 ? 1.0f : 50.0f);
+        setParameter(processor.apvts, "glitch", blockIndex % 2 == 0 ? 0.0f : 100.0f);
+        setParameter(processor.apvts, "noise", blockIndex % 2 == 0 ? 0.0f : 100.0f);
+
         juce::AudioBuffer<float> audio(2, blockSize);
         for (int sample = 0; sample < blockSize; ++sample)
         {
@@ -58,6 +73,11 @@ int main()
             audio.setSample(0, sample, value);
             audio.setSample(1, sample, value);
             ++generatedSamples;
+        }
+        if (blockSize > 2)
+        {
+            audio.setSample(0, 0, std::numeric_limits<float>::infinity());
+            audio.setSample(1, 1, std::numeric_limits<float>::quiet_NaN());
         }
 
         juce::MidiBuffer midi;
@@ -71,6 +91,12 @@ int main()
                 passed &= check(value >= -1.0f && value <= 1.0f, "processed audio should remain clipped");
             }
     }
+
+    processor.prepareToPlay(48000.0, 257);
+    juce::AudioBuffer<float> shortBlock(2, 257);
+    shortBlock.clear();
+    juce::MidiBuffer midi;
+    processor.processBlock(shortBlock, midi);
 
     if (passed)
         std::cout << "MP3 Crusher plug-in integration checks passed\n";

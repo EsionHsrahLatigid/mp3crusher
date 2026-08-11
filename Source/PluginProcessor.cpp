@@ -79,7 +79,6 @@ void MP3CrusherAudioProcessor::prepareToPlay(double sampleRate,
   juce::ignoreUnused(samplesPerBlock);
   currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
 
-  // フィルター初期化
   auto lowCoeffs =
       juce::dsp::IIR::Coefficients<float>::makeLowPass(currentSampleRate, 12000.0f);
   auto highCoeffs =
@@ -94,10 +93,17 @@ void MP3CrusherAudioProcessor::prepareToPlay(double sampleRate,
   lowpassR.reset();
   highpassL.reset();
   highpassR.reset();
+  currentBandwidth = 12000.0f;
 
   // グリッチバッファリサイズ
-  glitchBufferL.resize(static_cast<size_t>(sampleRate), 0.0f);
-  glitchBufferR.resize(static_cast<size_t>(sampleRate), 0.0f);
+  const auto bufferSize = static_cast<size_t>(std::max(1.0, currentSampleRate));
+  glitchBufferL.assign(bufferSize, 0.0f);
+  glitchBufferR.assign(bufferSize, 0.0f);
+  glitchWritePos = 0;
+  glitchReadPos = 0;
+  glitchCounter = 0;
+  glitchLength = 0;
+  isGlitching = false;
 }
 
 void MP3CrusherAudioProcessor::releaseResources() {}
@@ -111,6 +117,21 @@ bool MP3CrusherAudioProcessor::isBusesLayoutSupported(
     return false;
 
   return true;
+}
+
+void MP3CrusherAudioProcessor::updateFilterCoefficients(float bandwidth) {
+  const auto clampedBandwidth =
+      juce::jlimit(20.0f, static_cast<float>(currentSampleRate * 0.45),
+                   std::isfinite(bandwidth) ? bandwidth : 12000.0f);
+
+  if (std::abs(clampedBandwidth - currentBandwidth) <= 0.001f)
+    return;
+
+  currentBandwidth = clampedBandwidth;
+  const auto coefficients = juce::dsp::IIR::ArrayCoefficients<float>::makeLowPass(
+      currentSampleRate, currentBandwidth);
+  *lowpassL.coefficients = coefficients;
+  *lowpassR.coefficients = coefficients;
 }
 
 void MP3CrusherAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
@@ -132,19 +153,14 @@ void MP3CrusherAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   float noiseAmount = apvts.getRawParameterValue("noise")->load() / 100.0f;
   float mix = apvts.getRawParameterValue("mix")->load() / 100.0f;
 
-  // フィルター係数更新
-  bandwidth = juce::jlimit(20.0f, static_cast<float>(currentSampleRate * 0.45), bandwidth);
-  auto lowCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(
-      currentSampleRate, bandwidth);
-  lowpassL.coefficients = lowCoeffs;
-  lowpassR.coefficients = lowCoeffs;
+  updateFilterCoefficients(bandwidth);
 
   auto *leftChannel = buffer.getWritePointer(0);
   auto *rightChannel = buffer.getWritePointer(1);
 
   for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
-    float dryL = leftChannel[sample];
-    float dryR = rightChannel[sample];
+    float dryL = std::isfinite(leftChannel[sample]) ? leftChannel[sample] : 0.0f;
+    float dryR = std::isfinite(rightChannel[sample]) ? rightChannel[sample] : 0.0f;
     float wetL = dryL;
     float wetR = dryR;
 
