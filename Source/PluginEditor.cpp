@@ -4,16 +4,15 @@
 MP3CrusherAudioProcessorEditor::MP3CrusherAudioProcessorEditor(
     MP3CrusherAudioProcessor &p)
     : AudioProcessorEditor(&p), audioProcessor(p) {
-  setSize(400, 500);
+  setLookAndFeel(&ehlLookAndFeel);
+  setResizable(true, true);
+  setResizeLimits(ehl::juce_design::Metrics::minimumWidth,
+                  ehl::juce_design::Metrics::minimumHeight,
+                  ehl::juce_design::Metrics::maximumWidth,
+                  ehl::juce_design::Metrics::maximumHeight);
 
-  // タイトル
-  titleLabel.setText("MP3 CRUSHER", juce::dontSendNotification);
-  titleLabel.setFont(juce::Font(juce::FontOptions(28.0f).withStyle("Bold")));
-  titleLabel.setJustificationType(juce::Justification::centred);
-  titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff00ff88));
-  addAndMakeVisible(titleLabel);
+  addAndMakeVisible(parameterDisplay);
 
-  // スライダーセットアップ
   setupSlider(bitcrushSlider, bitcrushLabel, "BIT CRUSH");
   setupSlider(downsampleSlider, downsampleLabel, "DOWNSAMPLE");
   setupSlider(bandwidthSlider, bandwidthLabel, "BANDWIDTH");
@@ -40,66 +39,63 @@ MP3CrusherAudioProcessorEditor::MP3CrusherAudioProcessorEditor(
   mixAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
           audioProcessor.apvts, "mix", mixSlider);
+
+  updateDisplay();
+  setSize(ehl::juce_design::Metrics::defaultWidth,
+          ehl::juce_design::Metrics::defaultHeight);
+  startTimerHz(15);
 }
 
-MP3CrusherAudioProcessorEditor::~MP3CrusherAudioProcessorEditor() {}
+MP3CrusherAudioProcessorEditor::~MP3CrusherAudioProcessorEditor() {
+  stopTimer();
+  setLookAndFeel(nullptr);
+}
 
 void MP3CrusherAudioProcessorEditor::setupSlider(
     juce::Slider &slider, juce::Label &label, const juce::String &labelText) {
-  slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 80, 20);
-  slider.setColour(juce::Slider::rotarySliderFillColourId,
-                   juce::Colour(0xff00ff88));
-  slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffff0088));
+  ehl::juce_design::styleSlider(slider);
   addAndMakeVisible(slider);
 
   label.setText(labelText, juce::dontSendNotification);
-  label.setFont(juce::Font(juce::FontOptions(12.0f)));
-  label.setJustificationType(juce::Justification::centred);
-  label.setColour(juce::Label::textColourId, juce::Colours::white);
+  ehl::juce_design::styleLabel(label);
+  label.setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(label);
 }
 
 void MP3CrusherAudioProcessorEditor::paint(juce::Graphics &g) {
-  // グラデーション背景
-  juce::ColourGradient gradient(juce::Colour(0xff1a1a2e), 0, 0,
-                                juce::Colour(0xff16213e), 0, (float)getHeight(),
-                                false);
-  g.setGradientFill(gradient);
-  g.fillAll();
-
-  // デコレーションライン
-  g.setColour(juce::Colour(0xff00ff88).withAlpha(0.3f));
-  g.drawLine(20, 60, getWidth() - 20, 60, 2.0f);
-  g.drawLine(20, getHeight() - 20, getWidth() - 20, getHeight() - 20, 2.0f);
+  ehl::juce_design::paintEditorChrome(g, getLocalBounds(), "MP3 CRUSHER",
+                                      "MP3-STYLE BIT CRUSH");
 }
 
 void MP3CrusherAudioProcessorEditor::resized() {
-  auto bounds = getLocalBounds();
+  const auto bounds = getLocalBounds();
+  parameterDisplay.setBounds(ehl::juce_design::parameterDisplayArea(bounds));
 
-  // タイトル
-  titleLabel.setBounds(bounds.removeFromTop(60));
-
-  // スライダー配置 (2列3行)
-  auto sliderArea = bounds.reduced(20);
-  int sliderWidth = sliderArea.getWidth() / 2;
-  int sliderHeight = sliderArea.getHeight() / 3;
-  int knobSize = 80;
-  int labelHeight = 20;
-
-  auto placeSlider = [&](juce::Slider &slider, juce::Label &label, int col,
-                         int row) {
-    int x =
-        sliderArea.getX() + col * sliderWidth + (sliderWidth - knobSize) / 2;
-    int y = sliderArea.getY() + row * sliderHeight;
-    label.setBounds(x, y, knobSize, labelHeight);
-    slider.setBounds(x, y + labelHeight, knobSize, knobSize + 20);
+  auto placeSlider = [&](juce::Slider &slider, juce::Label &label,
+                         std::size_t index) {
+    ehl::juce_design::layoutLabelledControl(
+        label, slider, ehl::juce_design::controlCell(bounds, index));
   };
 
-  placeSlider(bitcrushSlider, bitcrushLabel, 0, 0);
-  placeSlider(downsampleSlider, downsampleLabel, 1, 0);
-  placeSlider(bandwidthSlider, bandwidthLabel, 0, 1);
-  placeSlider(glitchSlider, glitchLabel, 1, 1);
-  placeSlider(noiseSlider, noiseLabel, 0, 2);
-  placeSlider(mixSlider, mixLabel, 1, 2);
+  placeSlider(bitcrushSlider, bitcrushLabel, 0);
+  placeSlider(downsampleSlider, downsampleLabel, 1);
+  placeSlider(bandwidthSlider, bandwidthLabel, 2);
+  placeSlider(glitchSlider, glitchLabel, 3);
+  placeSlider(noiseSlider, noiseLabel, 4);
+  placeSlider(mixSlider, mixLabel, 5);
+}
+
+void MP3CrusherAudioProcessorEditor::timerCallback() { updateDisplay(); }
+
+void MP3CrusherAudioProcessorEditor::updateDisplay() {
+  auto readNormalized = [this](const char *id) {
+    if (auto *parameter = audioProcessor.apvts.getParameter(id))
+      return parameter->getValue();
+    return 0.0f;
+  };
+
+  parameterDisplay.setValues({readNormalized("bitcrush"),
+                              readNormalized("downsample"),
+                              readNormalized("bandwidth"),
+                              readNormalized("glitch")});
 }
