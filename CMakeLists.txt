@@ -175,6 +175,7 @@ if(MP3CRUSHER_BUILD_PLUGIN)
         add_test(
             NAME MP3CrusherArtifactChecks
             COMMAND ${CMAKE_COMMAND}
+                    -DBUILD_CONFIG=$<CONFIG>
                     -DSTAGE_DIR=${mp3crusher_staged_products}
                     -DSLUG=mp3crusher
                     -DEXPECT_AU=$<BOOL:${APPLE}>
