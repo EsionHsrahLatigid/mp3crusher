@@ -14,15 +14,21 @@ MP3 Crusher is a JUCE audio effect that combines bit-depth reduction, sample-rat
 
 ```bash
 cmake -S . -B build/plugin -DCMAKE_BUILD_TYPE=Release -DMP3CRUSHER_BUILD_PLUGIN=ON -DMP3CRUSHER_BUILD_TESTS=ON
-cmake --build build/plugin --target MP3Crusher_Artifacts MP3CrusherIntegrationTests --parallel 2
+cmake --build build/plugin --target ehl_stage_products MP3CrusherIntegrationTests --parallel 2
 ctest --test-dir build/plugin --output-on-failure
 ```
 
-Built products are staged under `artifacts/Release/`:
+On local macOS builds outside CI, VST3 and AU products are also copied to the current user's standard plug-in folders. Override this with `-DEHL_COPY_PLUGIN_AFTER_BUILD=ON|OFF`. Standalone products are not copied to `Audio/Plug-Ins`; they remain in the build and artifact trees.
 
-- `artifacts/Release/VST3/MP3 Crusher.vst3`
-- `artifacts/Release/AU/MP3 Crusher.component` on macOS
-- `artifacts/Release/Standalone/MP3 Crusher.app` on macOS
+Stable artifacts are staged under `artifacts/plugin-release/<platform>/`:
+
+- `artifacts/plugin-release/macos-arm64/vst3/mp3crusher_vst3_plugin.vst3`
+- `artifacts/plugin-release/macos-arm64/au/mp3crusher_au_plugin.component` on macOS
+- `artifacts/plugin-release/macos-arm64/standalone/mp3crusher_standalone_plugin.app` on macOS
+- `artifacts/plugin-release/windows-x64/vst3/mp3crusher_vst3_plugin.vst3`
+- `artifacts/plugin-release/windows-x64/standalone/mp3crusher_standalone_plugin.exe`
+- `artifacts/plugin-release/linux-x64/vst3/mp3crusher_vst3_plugin.vst3`
+- `artifacts/plugin-release/linux-x64/standalone/mp3crusher_standalone_plugin`
 
 ## Parameters
 
